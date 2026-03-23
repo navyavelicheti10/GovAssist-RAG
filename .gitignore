@@ -1,0 +1,8 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+checkpoints/
+qdrant_data/
+tmp_qdrant_test/
+
