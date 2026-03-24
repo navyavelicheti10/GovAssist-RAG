@@ -88,7 +88,7 @@ The system consists of several key components:
    python scrape.py
    ```
    
-   This will create/update `scheme.json` with the latest scheme information.
+   This will create/update `data/raw/scheme.json` with the latest scheme information.
 
 ## Usage
 
@@ -148,7 +148,7 @@ The Streamlit app will be available at `http://localhost:8501`.
 | `GROQ_API_KEY` | - | Required. Your Groq API key |
 | `GROQ_MODEL` | `llama-3.1-8b-instant` | LLM model to use |
 | `LOG_LEVEL` | `INFO` | Logging level |
-| `SCHEMES_FILE` | `scheme.json` | Path to schemes data file |
+| `SCHEMES_FILE` | `data/raw/scheme.json` | Path to schemes data file |
 | `AUTO_INGEST` | `true` | Auto-ingest schemes on startup |
 | `FORCE_RECREATE_COLLECTION` | `false` | Force recreate Qdrant collection |
 | `QDRANT_MODE` | `local` | `local` or `cloud` |
@@ -159,7 +159,7 @@ The Streamlit app will be available at `http://localhost:8501`.
 
 ### Data Files
 
-- `scheme.json`: Contains scraped government scheme data
+- `data/raw/scheme.json`: Contains scraped government scheme data
 - `checkpoints/chat_sessions.json`: Stores chat session history
 - `qdrant_data/`: Local Qdrant vector database storage
 
@@ -175,25 +175,37 @@ The Streamlit app will be available at `http://localhost:8501`.
 
 ```
 GovAssist-RAG/
-├── main.py                 # FastAPI server
-├── streamlit_app.py        # Streamlit UI
-├── rag_pipeline.py         # Main RAG orchestration
-├── embed.py                # Embedding service
-├── qdrant_db.py           # Vector database manager
-├── groq_client.py         # LLM client
-├── checkpointer.py        # Session management
-├── scrape.py              # Web scraper
-├── scheme.json            # Scheme data
-├── requirements.txt       # Python dependencies
-└── .env                   # Environment variables
+├── govassist/
+│   ├── api/
+│   │   └── app.py         # FastAPI application
+│   ├── ingestion/
+│   │   └── scraper.py     # Playwright scraper
+│   ├── rag/
+│   │   ├── embeddings.py  # Embedding and data normalization
+│   │   ├── llm.py         # Groq client and prompt building
+│   │   ├── pipeline.py    # Retrieval and answer orchestration
+│   │   └── vector_store.py# Qdrant integration
+│   ├── storage/
+│   │   └── checkpointer.py# Session persistence
+│   └── config.py          # Shared environment loading
+├── ui/
+│   └── streamlit_app.py   # Streamlit UI implementation
+├── data/
+│   └── raw/
+│       └── scheme.json    # Scraped scheme data
+├── main.py                # Compatibility API entrypoint
+├── scrape.py              # Compatibility scraper entrypoint
+├── streamlit_app.py       # Compatibility Streamlit entrypoint
+├── requirements.txt
+└── .env
 ```
 
 ### Adding New Features
 
-1. For new embedding models: Modify `EmbeddingService` in `embed.py`
-2. For different LLMs: Update `GroqLLMClient` in `groq_client.py`
-3. For additional categories: Add URLs to `CATEGORY_URLS` in `scrape.py`
-4. For new API endpoints: Add routes in `main.py`
+1. For new embedding models: Modify `EmbeddingService` in `govassist/rag/embeddings.py`
+2. For different LLMs: Update `GroqLLMClient` in `govassist/rag/llm.py`
+3. For additional categories: Add URLs to `CATEGORY_URLS` in `govassist/ingestion/scraper.py`
+4. For new API endpoints: Add routes in `govassist/api/app.py`
 
 ## Contributing
 
@@ -209,5 +221,4 @@ This project is open source. Please check the license file for details.
 
 ## Disclaimer
 
-This project scrapes data from government websites for informational purposes. Please verify scheme details and eligibility from official sources before applying. The developers are not responsible for any inaccuracies in the scraped data.</content>
-<parameter name="filePath">c:\Users\LAKSHMAN\GovAssist-RAG\README.md
+This project scrapes data from government websites for informational purposes. Please verify scheme details and eligibility from official sources before applying. The developers are not responsible for any inaccuracies in the scraped data.

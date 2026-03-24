@@ -6,3 +6,5 @@ groq
 numpy
 streamlit
 requests
+python-dotenv
+playwright

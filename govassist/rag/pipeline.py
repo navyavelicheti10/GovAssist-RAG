@@ -4,17 +4,25 @@ import re
 import uuid
 from typing import Dict, List, Optional
 
-from checkpointer import FileCheckpointer
-from embed import EmbeddingService, infer_tags_from_text, load_schemes
-from groq_client import GroqLLMClient
-from qdrant_db import QdrantManager
+from govassist.rag.embeddings import EmbeddingService, infer_tags_from_text, load_schemes
+from govassist.rag.llm import GroqLLMClient
+from govassist.rag.vector_store import QdrantManager
+from govassist.storage.checkpointer import FileCheckpointer
 
 logger = logging.getLogger(__name__)
 
 
 def resolve_data_file() -> str:
-    """Always use scheme.json unless SCHEMES_FILE explicitly overrides it."""
-    return os.getenv("SCHEMES_FILE", "scheme.json")
+    """Resolve the scheme data path, supporting the new data folder and the old root file."""
+    configured_path = os.getenv("SCHEMES_FILE")
+    if configured_path:
+        return configured_path
+
+    for candidate in ("data/raw/scheme.json", "scheme.json"):
+        if os.path.exists(candidate):
+            return candidate
+
+    return "data/raw/scheme.json"
 
 
 class GovernmentSchemesRAG:
