@@ -1,14 +1,18 @@
 import logging
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
+from govassist.config import load_env_file
+from govassist.agents.graph import vozhi_orchestrator
+from langchain_core.messages import HumanMessage
+from fastapi import Request, BackgroundTasks
 from pydantic import BaseModel, Field
 
-from govassist.config import load_env_file
-from govassist.rag.pipeline import GovernmentSchemesRAG, resolve_data_file
-
+# Ensure env vars are loaded
 load_env_file()
 
 logging.basicConfig(
@@ -17,7 +21,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-rag_pipeline: GovernmentSchemesRAG | None = None
+logger = logging.getLogger(__name__)
 
 
 class ChatRequest(BaseModel):
@@ -38,26 +42,9 @@ class ChatResponse(BaseModel):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global rag_pipeline
-
-    logger.info("Starting Government Schemes RAG API")
-    rag_pipeline = GovernmentSchemesRAG()
-
-    data_file = resolve_data_file()
-    auto_ingest = os.getenv("AUTO_INGEST", "true").lower() == "true"
-    force_recreate = os.getenv("FORCE_RECREATE_COLLECTION", "false").lower() == "true"
-
-    if auto_ingest:
-        logger.info("Auto-ingesting scheme data from %s", data_file)
-        inserted = rag_pipeline.ingest_schemes(
-            data_file=data_file,
-            force_recreate=force_recreate,
-        )
-        logger.info("Ingestion complete. Inserted %s schemes.", inserted)
-
+    logger.info("Starting Vozhi API (LangGraph Edition)")
     yield
-
-    logger.info("Shutting down Government Schemes RAG API")
+    logger.info("Shutting down Vozhi API")
 
 
 app = FastAPI(
@@ -67,40 +54,86 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+WEB_ROOT = PROJECT_ROOT / "web"
+
 
 @app.get("/health")
 def health_check() -> dict:
     return {"status": "OK"}
 
 
-@app.post("/chat", response_model=ChatResponse)
-def chat(request: ChatRequest) -> ChatResponse:
-    if rag_pipeline is None:
-        raise HTTPException(status_code=503, detail="RAG pipeline is not ready yet.")
-
-    try:
-        session_id = request.session_id
-        if session_id in {None, "", "null", "None", "string"}:
-            session_id = None
-
-        result = rag_pipeline.answer_query(
-            query=request.query,
-            top_k=request.top_k,
-            session_id=session_id,
-        )
-        return ChatResponse(**result)
-    except Exception as exc:
-        logger.exception("Chat request failed")
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+@app.get("/", include_in_schema=False)
+def serve_web_app() -> FileResponse:
+    index_file = WEB_ROOT / "index.html"
+    if not index_file.exists():
+        raise HTTPException(status_code=404, detail="Web UI not found. Create web/index.html.")
+    return FileResponse(index_file)
 
 
-@app.get("/sessions/{session_id}")
-def get_session(session_id: str) -> dict:
-    if rag_pipeline is None:
-        raise HTTPException(status_code=503, detail="RAG pipeline is not ready yet.")
-
-    history = rag_pipeline.checkpointer.get_history(session_id)
+@app.post("/chat")
+def chat(request: ChatRequest):
+    session_id = request.session_id or "default-session"
+    config = {"configurable": {"thread_id": session_id}}
+    
+    # Run the langgraph via streaming or invoke
+    state_input = {
+        "messages": [HumanMessage(content=request.query)],
+        "current_query": request.query
+    }
+    
+    # Get final state after execution
+    result_state = vozhi_orchestrator.invoke(state_input, config=config)
+    
+    # Format response for Web UI
+    final_text = result_state.get("final_package", "I am having trouble processing that right now.")
+    confidence = result_state.get("confidence_score", 0.0)
+    matches = result_state.get("retrieved_schemes", [])
+    
     return {
         "session_id": session_id,
-        "history": history,
+        "query": request.query,
+        "answer": final_text,
+        "confidence": confidence,
+        "matches": matches,
     }
+
+from govassist.integrations.twilio import twilio_client
+from fastapi import Response
+
+@app.post("/whatsapp")
+async def twilio_webhook(request: Request):
+    """Handles incoming Twilio WhatsApp messages."""
+    form_data = dict(await request.form())
+    parsed = twilio_client.parse_incoming_message(form_data)
+    
+    sender = parsed.get("from")
+    body = parsed.get("body", "").strip()
+    
+    if not sender:
+        return Response(content="<Response></Response>", media_type="application/xml")
+        
+    session_id = sender.replace("whatsapp:", "")
+    config = {"configurable": {"thread_id": session_id}}
+    
+    state_input = {"messages": [HumanMessage(content=body)], "current_query": body}
+    
+    try:
+        result_state = vozhi_orchestrator.invoke(state_input, config=config)
+        reply_text = result_state.get("final_package", "System Error while processing.")
+    except Exception as e:
+        logger.error(f"Error in graph: {e}")
+        reply_text = "Sorry, I am currently undergoing maintenance."
+        
+    twiml_resp = twilio_client.generate_twiml_response(reply_text)
+    return Response(content=twiml_resp, media_type="application/xml")

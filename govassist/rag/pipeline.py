@@ -2,6 +2,7 @@ import logging
 import os
 import re
 import uuid
+from pathlib import Path
 from typing import Dict, List, Optional
 
 from govassist.rag.embeddings import EmbeddingService, infer_tags_from_text, load_schemes
@@ -13,16 +14,32 @@ logger = logging.getLogger(__name__)
 
 
 def resolve_data_file() -> str:
-    """Resolve the scheme data path, supporting the new data folder and the old root file."""
+    """Resolve scheme data path with fallback for legacy .env values."""
     configured_path = os.getenv("SCHEMES_FILE")
+    project_root = Path(__file__).resolve().parents[2]
+
+    candidates: List[Path] = []
     if configured_path:
-        return configured_path
+        configured = Path(configured_path)
+        candidates.append(configured)
+        if not configured.is_absolute():
+            candidates.append(project_root / configured)
 
-    for candidate in ("data/raw/scheme.json", "scheme.json"):
-        if os.path.exists(candidate):
-            return candidate
+    candidates.extend(
+        [
+            Path("data/raw/scheme.json"),
+            project_root / "data/raw/scheme.json",
+            Path("scheme.json"),
+            project_root / "scheme.json",
+        ]
+    )
 
-    return "data/raw/scheme.json"
+    for candidate in candidates:
+        if candidate.exists():
+            return str(candidate)
+
+    # Prefer the canonical location for clear startup errors if all candidates are missing.
+    return str(project_root / "data/raw/scheme.json")
 
 
 class GovernmentSchemesRAG:

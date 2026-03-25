@@ -8,9 +8,9 @@ A Retrieval-Augmented Generation (RAG) system that helps users find and learn ab
 - **Vector Search**: Uses sentence-transformers (BGE model) for semantic search of schemes
 - **AI-Powered Responses**: Integrates with Groq's Llama models for natural language answers
 - **Chat Sessions**: Maintains conversation history for contextual follow-up questions
-- **Dual Interface**: 
+- **Modern Web Interface**:
   - FastAPI backend for API access
-  - Streamlit web UI for user-friendly interaction
+  - Vue + Tailwind web UI served by FastAPI
 - **Fallback Search**: Keyword-based search when vector search fails
 - **Tag-Based Filtering**: Auto-detects query categories (student, farmer, women, loan, etc.) for better results
 - **Local Vector Database**: Uses Qdrant for efficient vector storage and retrieval
@@ -26,12 +26,12 @@ The system consists of several key components:
 - **RAG Pipeline (`rag_pipeline.py`)**: Orchestrates the entire retrieval and generation process
 - **Session Management (`checkpointer.py`)**: Stores chat history in JSON files
 - **API Server (`main.py`)**: FastAPI backend providing REST endpoints
-- **Web UI (`streamlit_app.py`)**: Streamlit frontend for user interaction
+- **Web UI (`web/index.html`)**: Vue frontend for user interaction
 
 ## Tech Stack
 
 - **Backend**: Python, FastAPI, Uvicorn
-- **Frontend**: Streamlit
+- **Frontend**: Vue 3, Tailwind CSS
 - **AI/ML**: Sentence Transformers, Groq API (Llama 3.1)
 - **Vector Database**: Qdrant (local or cloud)
 - **Web Scraping**: Playwright
@@ -73,7 +73,7 @@ The system consists of several key components:
    ```env
    GROQ_API_KEY=your_groq_api_key_here
    LOG_LEVEL=INFO
-   SCHEMES_FILE=scheme.json
+   SCHEMES_FILE=data/raw/scheme.json
    AUTO_INGEST=true
    FORCE_RECREATE_COLLECTION=false
    QDRANT_MODE=local
@@ -103,10 +103,10 @@ The FastAPI server will start on `http://127.0.0.1:8000`.
 ### Starting the Web UI
 
 ```bash
-streamlit run streamlit_app.py
+python main.py
 ```
 
-The Streamlit app will be available at `http://localhost:8501`.
+The production-style web app is served by FastAPI at `http://127.0.0.1:8000/`.
 
 ### API Endpoints
 
@@ -188,14 +188,13 @@ GovAssist-RAG/
 │   ├── storage/
 │   │   └── checkpointer.py# Session persistence
 │   └── config.py          # Shared environment loading
-├── ui/
-│   └── streamlit_app.py   # Streamlit UI implementation
+├── web/
+│   └── index.html         # Vue + Tailwind web UI
 ├── data/
 │   └── raw/
 │       └── scheme.json    # Scraped scheme data
 ├── main.py                # Compatibility API entrypoint
 ├── scrape.py              # Compatibility scraper entrypoint
-├── streamlit_app.py       # Compatibility Streamlit entrypoint
 ├── requirements.txt
 └── .env
 ```
