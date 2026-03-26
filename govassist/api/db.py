@@ -51,3 +51,12 @@ def save_session(session_id: str, title: str, messages: list):
     ''', (session_id, title, msgs_json, time.time() * 1000))
     conn.commit()
     conn.close()
+
+def delete_session(session_id: str) -> bool:
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("DELETE FROM chat_sessions WHERE id = ?", (session_id,))
+    deleted = c.rowcount > 0
+    conn.commit()
+    conn.close()
+    return deleted

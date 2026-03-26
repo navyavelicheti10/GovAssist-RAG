@@ -1,16 +1,41 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import { Mic, Paperclip, Send, ShieldCheck, Loader2, Bot, User, Share2, Home, MessageSquare, Image as ImageIcon, Headphones, FileText, Settings, HelpCircle, ArrowUp } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  ArrowUp,
+  Bot,
+  FileText,
+  Headphones,
+  Home,
+  Image as ImageIcon,
+  Loader2,
+  MessageSquare,
+  Moon,
+  Paperclip,
+  Share2,
+  ShieldCheck,
+  Sun,
+  Trash2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+
+interface SchemeMatch {
+  scheme_name?: string;
+}
 
 interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
-  matches?: any[];
+  matches?: SchemeMatch[];
   citations?: string[];
   confidence?: number;
 }
@@ -22,102 +47,136 @@ interface ChatSession {
   updatedAt: number;
 }
 
+const INITIAL_ASSISTANT_MESSAGE =
+  "Namaskaram! I am Vozhi, India’s Intelligent Benefits Orchestrator. How can I help you discover and unlock government schemes today?";
+
 export default function VozhiApp() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [session, setSession] = useState("");
   const [history, setHistory] = useState<ChatSession[]>([]);
+  const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [activeTab, setActiveTab] = useState<"home" | "chat">("home");
+  const [uploadedDoc, setUploadedDoc] = useState<File | null>(null);
+  const [showWhatsApp, setShowWhatsApp] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Initialize from Database
-  useEffect(() => {
-    async function loadData() {
-      try {
-        const res = await fetch("http://127.0.0.1:8000/api/sessions");
-        if (res.ok) {
-          const loadedHistory: ChatSession[] = await res.json();
-          setHistory(loadedHistory);
-          
-          if (loadedHistory.length > 0) {
-            // Load the most recent session
-            const active = loadedHistory[0];
-            setSession(active.id);
-            const msgRes = await fetch(`http://127.0.0.1:8000/api/sessions/${active.id}`);
-            if (msgRes.ok) {
-              const data = await msgRes.json();
-              setMessages(data.messages);
-            }
-          } else {
-            createNewSession([]);
-          }
-        }
-      } catch (e) {
-        console.error("Failed to load history from DB", e);
-        createNewSession([]);
-      }
-    }
-    loadData();
-  }, []);
-
-  const createNewSession = (currentHistory: ChatSession[] = history) => {
-    const newSessionId = "web-" + Math.random().toString(36).substring(7);
+  const createNewSession = useCallback(async (currentHistory: ChatSession[]) => {
+    const newSessionId = `web-${Math.random().toString(36).substring(7)}`;
     const initialMsg: Message = {
       id: Date.now().toString(),
       role: "assistant",
-      content: "Namaskaram! I am Vozhi, India’s Intelligent Benefits Orchestrator. How can I help you discover and unlock government schemes today?",
+      content: INITIAL_ASSISTANT_MESSAGE,
     };
-    
-    // Set locally
+
     const newSession: ChatSession = {
       id: newSessionId,
       title: "New Conversation",
       messages: [initialMsg],
-      updatedAt: Date.now()
+      updatedAt: Date.now(),
     };
-    
+
     setHistory([newSession, ...currentHistory]);
     setSession(newSessionId);
     setMessages([initialMsg]);
-    
-    // Save to DB
-    fetch("http://127.0.0.1:8000/api/sessions", {
+    setActiveTab("chat");
+
+    await fetch("http://127.0.0.1:8000/api/sessions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session_id: newSessionId, title: "New Conversation", messages: [initialMsg] })
+      body: JSON.stringify({
+        session_id: newSessionId,
+        title: "New Conversation",
+        messages: [initialMsg],
+      }),
     }).catch(console.error);
-  };
+  }, []);
 
-  // Sync active chat history to Database when messages change
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const res = await fetch("http://127.0.0.1:8000/api/sessions");
+        if (!res.ok) return;
+
+        const loadedHistory: ChatSession[] = await res.json();
+        setHistory(loadedHistory);
+
+        if (loadedHistory.length > 0) {
+          const active = loadedHistory[0];
+          setSession(active.id);
+          setActiveTab("chat");
+
+          const msgRes = await fetch(`http://127.0.0.1:8000/api/sessions/${active.id}`);
+          if (msgRes.ok) {
+            const data = await msgRes.json();
+            setMessages(data.messages);
+          }
+        } else {
+          setActiveTab("home");
+          setSession("");
+          setMessages([]);
+        }
+      } catch (e) {
+        console.error("Failed to load history from DB", e);
+        setActiveTab("home");
+        setSession("");
+        setMessages([]);
+      }
+    }
+
+    void loadData();
+  }, []);
+
+  useEffect(() => {
+    const storedTheme = window.localStorage.getItem("vozhi-theme");
+    const preferredTheme =
+      storedTheme === "light" || storedTheme === "dark"
+        ? storedTheme
+        : window.matchMedia("(prefers-color-scheme: dark)").matches
+          ? "dark"
+          : "light";
+    setTheme(preferredTheme);
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", theme === "dark");
+    window.localStorage.setItem("vozhi-theme", theme);
+  }, [theme]);
+
   useEffect(() => {
     if (session && messages.length > 0) {
-      // Pick title from the first human message
-      const firstUser = messages.find(m => m.role === "user");
-      const newTitle = firstUser ? (firstUser.content.length > 25 ? firstUser.content.substring(0, 25) + "..." : firstUser.content) : "New Conversation";
-      
-      // Update local history array for Sidebar immediately
-      setHistory(prev => prev.map(h => h.id === session ? { ...h, updatedAt: Date.now(), title: newTitle } : h));
+      const firstUser = messages.find((message) => message.role === "user");
+      const newTitle = firstUser
+        ? firstUser.content.length > 25
+          ? `${firstUser.content.substring(0, 25)}...`
+          : firstUser.content
+        : "New Conversation";
 
-      // Push to DB
+      setHistory((prev) =>
+        prev.map((chat) =>
+          chat.id === session ? { ...chat, updatedAt: Date.now(), title: newTitle } : chat,
+        ),
+      );
+
       fetch("http://127.0.0.1:8000/api/sessions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_id: session, title: newTitle, messages: messages })
+        body: JSON.stringify({ session_id: session, title: newTitle, messages }),
       }).catch(console.error);
     }
   }, [messages, session]);
-  
-  const [activeTab, setActiveTab] = useState<"home" | "chat">("chat");
-  const [dragActive, setDragActive] = useState(false);
-  const [uploadedDoc, setUploadedDoc] = useState<File | null>(null);
 
-  // Modals state
-  const [showWhatsApp, setShowWhatsApp] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
-  const startNewChat = () => {
-    createNewSession();
-    setActiveTab("chat");
+  const startNewChat = async () => {
+    await createNewSession(history);
+  };
+
+  const toggleTheme = () => {
+    setTheme((currentTheme) => (currentTheme === "dark" ? "light" : "dark"));
   };
 
   const loadChat = async (chatId: string) => {
@@ -134,41 +193,76 @@ export default function VozhiApp() {
     }
   };
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  const deleteChat = async (chatId: string) => {
+    try {
+      const res = await fetch(`http://127.0.0.1:8000/api/sessions/${chatId}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        throw new Error("Failed to delete chat");
+      }
+
+      const remainingChats = history.filter((chat) => chat.id !== chatId);
+      setHistory(remainingChats);
+
+      if (session === chatId) {
+        if (remainingChats.length > 0) {
+          const nextChat = [...remainingChats].sort((a, b) => b.updatedAt - a.updatedAt)[0];
+          await loadChat(nextChat.id);
+        } else {
+          setSession("");
+          setMessages([]);
+          setActiveTab("home");
+        }
+      }
+    } catch (e) {
+      console.error("Failed to delete chat", e);
+    }
+  };
 
   const handleSend = async () => {
     if (!input.trim() && !uploadedDoc) return;
-    
-    const userMsg: Message = { id: Date.now().toString(), role: "user", content: input || `(Uploaded Document: ${uploadedDoc?.name})` };
-    setMessages(prev => [...prev, userMsg]);
+    if (!session) return;
+
+    const userMsg: Message = {
+      id: Date.now().toString(),
+      role: "user",
+      content: input || `(Uploaded Document: ${uploadedDoc?.name})`,
+    };
+    setMessages((prev) => [...prev, userMsg]);
     setInput("");
     setLoading(true);
-    
+
     try {
       const res = await fetch("http://127.0.0.1:8000/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: userMsg.content, session_id: session })
+        body: JSON.stringify({ query: userMsg.content, session_id: session }),
       });
       if (!res.ok) throw new Error("API Error");
-      
+
       const data = await res.json();
-      setMessages(prev => [...prev, {
-        id: Date.now().toString(),
-        role: "assistant",
-        content: data.answer,
-        matches: data.matches,
-        confidence: data.confidence,
-        citations: data.matches?.map((m: any) => m.scheme_name) || []
-      }]);
-    } catch (e) {
-      setMessages(prev => [...prev, {
-        id: Date.now().toString(),
-        role: "assistant",
-        content: "Sorry, I am having trouble connecting to the Vozhi Orchestrator right now."
-      }]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: Date.now().toString(),
+          role: "assistant",
+          content: data.answer,
+          matches: data.matches,
+          confidence: data.confidence,
+          citations:
+            data.matches?.map((match: SchemeMatch) => match.scheme_name).filter(Boolean) || [],
+        },
+      ]);
+    } catch {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: Date.now().toString(),
+          role: "assistant",
+          content: "Sorry, I am having trouble connecting to the Vozhi Orchestrator right now.",
+        },
+      ]);
     } finally {
       setLoading(false);
       setUploadedDoc(null);
@@ -176,275 +270,302 @@ export default function VozhiApp() {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      handleSend();
+      void handleSend();
     }
   };
 
+  const sortedHistory = [...history].sort((a, b) => b.updatedAt - a.updatedAt);
+
   return (
-    <div className="flex h-screen w-full bg-white text-zinc-900 font-sans overflow-hidden">
-      
-      {/* Sidebar - Matching Sarvam style */}
-      <aside className="w-64 border-r border-zinc-200 bg-[#f9f9f9] flex flex-col hidden md:flex shrink-0">
-        <div className="px-6 py-5 border-b border-zinc-200 flex items-center justify-between">
-            <h1 className="text-xl font-bold tracking-tight text-zinc-900 font-sans flex items-center gap-2">
-              <ShieldCheck className="h-5 w-5 text-zinc-800" />
-              vozhi
-            </h1>
+    <div className="flex h-screen w-full overflow-hidden bg-white font-sans text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
+      <aside className="hidden w-64 shrink-0 flex-col border-r border-zinc-200 bg-[#f9f9f9] dark:border-zinc-800 dark:bg-zinc-900 md:flex">
+        <div className="flex items-center justify-between border-b border-zinc-200 px-6 py-5 dark:border-zinc-800">
+          <h1 className="flex items-center gap-2 font-sans text-xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">
+            <ShieldCheck className="h-5 w-5 text-zinc-800 dark:text-zinc-100" />
+            vozhi
+          </h1>
         </div>
-        
-        <div className="flex-1 overflow-y-auto px-3 py-4 space-y-8">
-          
+
+        <div className="flex-1 space-y-8 overflow-y-auto px-3 py-4">
           <div className="space-y-1">
-             <button 
-                onClick={() => setActiveTab("home")}
-                className={`flex items-center gap-3 w-full px-3 py-2 text-sm font-medium rounded-md transition-colors text-left ${activeTab === "home" ? "bg-zinc-200/60 text-zinc-900" : "text-zinc-600 hover:bg-zinc-200/50"}`}
-             >
-                <Home className="w-4 h-4" /> Home
-             </button>
+            <button
+              onClick={() => setActiveTab("home")}
+              className={`flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm font-medium transition-colors ${
+                activeTab === "home"
+                  ? "bg-zinc-200/60 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100"
+                  : "text-zinc-600 hover:bg-zinc-200/50 dark:text-zinc-400 dark:hover:bg-zinc-800/70"
+              }`}
+            >
+              <Home className="h-4 w-4" /> Home
+            </button>
           </div>
 
-          <div className="flex flex-col flex-1 min-h-0">
-             <h3 className="px-3 pb-2 text-[11px] font-medium text-zinc-500 uppercase tracking-widest">Recent Chats</h3>
-             <div className="space-y-1 mt-1 overflow-y-auto custom-scrollbar flex-1 pb-4">
-               {history.sort((a,b) => b.updatedAt - a.updatedAt).map(chat => (
-                 <button 
-                    key={chat.id}
-                    onClick={() => loadChat(chat.id)}
-                    className={`flex items-center gap-3 w-full px-3 py-2 text-sm font-medium rounded-md transition-colors text-left truncate ${
-                      session === chat.id && activeTab === "chat" ? "bg-zinc-200/60 text-zinc-900" : "text-zinc-600 hover:bg-zinc-200/50"
+          <div className="flex min-h-0 flex-1 flex-col">
+            <h3 className="px-3 pb-2 text-[11px] font-medium uppercase tracking-widest text-zinc-500 dark:text-zinc-400">
+              Recent Chats
+            </h3>
+            <div className="custom-scrollbar mt-1 flex-1 space-y-1 overflow-y-auto pb-4">
+              {sortedHistory.map((chat) => (
+                <div
+                  key={chat.id}
+                  className={`group flex items-center gap-1 rounded-md transition-colors ${
+                    session === chat.id && activeTab === "chat"
+                      ? "bg-zinc-200/60 dark:bg-zinc-800"
+                      : "hover:bg-zinc-200/50 dark:hover:bg-zinc-800/70"
+                  }`}
+                >
+                  <button
+                    onClick={() => void loadChat(chat.id)}
+                    className={`flex min-w-0 flex-1 items-center gap-3 px-3 py-2 text-left text-sm font-medium ${
+                      session === chat.id && activeTab === "chat"
+                        ? "text-zinc-900 dark:text-zinc-100"
+                        : "text-zinc-600 dark:text-zinc-400"
                     }`}
-                 >
-                    <MessageSquare className="w-4 h-4 shrink-0" /> 
+                  >
+                    <MessageSquare className="h-4 w-4 shrink-0" />
                     <span className="truncate">{chat.title}</span>
-                 </button>
-               ))}
-               {history.length === 0 && (
-                 <p className="text-xs text-zinc-400 px-3 py-2">No recent chats.</p>
-               )}
-             </div>
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Delete ${chat.title}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void deleteChat(chat.id);
+                    }}
+                    className="mr-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-zinc-400 opacity-0 transition hover:bg-white hover:text-red-600 group-hover:opacity-100 dark:hover:bg-zinc-700"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              ))}
+              {history.length === 0 && (
+                <div className="px-3 py-2 text-xs leading-relaxed text-zinc-400 dark:text-zinc-500">
+                  No chats available. Click create new chat to start exploring about the
+                  schemes.
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-
-        <div className="p-4 border-t border-zinc-200 flex items-center gap-3">
-           <div className="w-8 h-8 rounded-full bg-zinc-800 text-white flex items-center justify-center text-xs font-semibold">
-              D
-           </div>
-           <span className="text-sm font-medium text-zinc-800">Dhina</span>
         </div>
       </aside>
 
-      {/* Main Area */}
-      <main className="flex-1 grid grid-rows-[auto_1fr] h-screen min-w-0 bg-white relative">
-        
-        {/* Header */}
-        <header className="px-8 py-5 flex items-center justify-between border-b border-zinc-100 z-10 bg-white">
+      <main className="relative grid h-screen min-w-0 flex-1 grid-rows-[auto_1fr] bg-white dark:bg-zinc-950">
+        <header className="z-10 flex items-center justify-between border-b border-zinc-100 bg-white px-8 py-5 dark:border-zinc-800 dark:bg-zinc-950">
           <div>
-            <h2 className="text-xl font-semibold text-zinc-800 tracking-tight">{activeTab === "home" ? "Welcome Home" : "Vozhi Assistant"}</h2>
-            <p className="text-sm text-zinc-500 mt-0.5">{activeTab === "home" ? "Overview of Graph RAG capabilities and indexed schemes." : "Discover eligible schemes, upload documents securely, and chat in any language."}</p>
+            <h2 className="text-xl font-semibold tracking-tight text-zinc-800 dark:text-zinc-100">
+              {activeTab === "home" ? "Welcome Home" : "Vozhi Assistant"}
+            </h2>
+            <p className="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">
+              {activeTab === "home"
+                ? "Overview of indexed schemes and assistant capabilities."
+                : "Discover eligible schemes, upload documents securely, and chat in any language."}
+            </p>
           </div>
           <div className="flex gap-3">
-            <Button variant="outline" onClick={() => setShowWhatsApp(true)} className="text-sm rounded-lg h-9 font-medium shadow-sm flex items-center gap-2">
-              <Share2 className="w-4 h-4" /> Try WhatsApp
+            <Button
+              variant="outline"
+              onClick={() => setShowWhatsApp(true)}
+              className="flex h-9 items-center gap-2 rounded-lg text-sm font-medium shadow-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+            >
+              <Share2 className="h-4 w-4" /> Try WhatsApp
             </Button>
-            <Button variant="outline" onClick={startNewChat} className="text-sm rounded-lg h-9 font-medium shadow-sm flex items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={() => void startNewChat()}
+              className="flex h-9 items-center gap-2 rounded-lg text-sm font-medium shadow-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+            >
               + New Chat
             </Button>
-            <Button variant="ghost" onClick={() => setShowSettings(true)} size="icon" className="h-9 w-9 text-zinc-500 rounded-lg hover:bg-zinc-100">
-              <Settings className="w-4 h-4" />
+            <Button
+              variant="ghost"
+              onClick={toggleTheme}
+              size="icon"
+              className="h-9 w-9 rounded-lg text-zinc-500 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            >
+              {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </Button>
           </div>
         </header>
 
         {activeTab === "home" ? (
-          <div className="w-full h-full overflow-y-auto p-8 sm:p-12">
-            <div className="max-w-4xl mx-auto space-y-8">
-              
-              <div className="bg-gradient-to-br from-zinc-900 to-zinc-800 rounded-3xl p-10 text-white shadow-xl">
-                <h1 className="text-3xl font-bold tracking-tight mb-3">Welcome to Vozhi.</h1>
-                <p className="text-zinc-300 max-w-2xl leading-relaxed text-lg mb-8">
-                  India’s first Intelligent Government Benefits Orchestrator powered by Graph RAG and Multi-Agent architecture. Vozhi turns natural voice/text queries into verified, bundled actionable benefits.
+          <div className="h-full w-full overflow-y-auto p-8 sm:p-12">
+            <div className="mx-auto max-w-4xl space-y-8">
+              <div className="rounded-3xl bg-gradient-to-br from-zinc-900 to-zinc-800 p-10 text-white shadow-xl">
+                <h1 className="mb-3 text-3xl font-bold tracking-tight">Welcome to Vozhi.</h1>
+                <p className="mb-8 max-w-2xl text-lg leading-relaxed text-zinc-300">
+                  India&apos;s first Intelligent Government Benefits Orchestrator. Vozhi turns
+                  natural voice and text queries into verified, bundled actionable benefits.
                 </p>
                 <div className="flex gap-4">
-                  <Button onClick={startNewChat} className="bg-white text-zinc-900 hover:bg-zinc-100 rounded-xl px-6 h-11 font-medium shadow-sm border-0">
-                    <MessageSquare className="w-4 h-4 mr-2" /> Start Chat
-                  </Button>
-                  <Button variant="outline" onClick={() => setShowSettings(true)} className="border-zinc-600 text-white hover:bg-zinc-800 rounded-xl px-6 h-11 font-medium bg-transparent">
-                    View Architecture
+                  <Button
+                    onClick={() => void startNewChat()}
+                    className="h-11 rounded-xl border-0 bg-white px-6 font-medium text-zinc-900 shadow-sm hover:bg-zinc-100"
+                  >
+                    <MessageSquare className="mr-2 h-4 w-4" /> Create New Chat
                   </Button>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="bg-white border border-zinc-200 rounded-2xl p-6 shadow-sm">
-                   <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center mb-4">
-                     <FileText className="w-5 h-5 text-blue-600" />
-                   </div>
-                   <h3 className="font-bold text-zinc-800 tracking-tight mb-2">Graph RAG Engine</h3>
-                   <p className="text-sm text-zinc-500 leading-relaxed">
-                     LlamaIndex PropertyGraph analyzes complex interdependencies between state and central schemes, creating perfectly tailored eligibility bundles.
-                   </p>
-                </div>
-                
-                <div className="bg-white border border-zinc-200 rounded-2xl p-6 shadow-sm">
-                   <div className="w-10 h-10 rounded-xl bg-purple-50 flex items-center justify-center mb-4">
-                     <Headphones className="w-5 h-5 text-purple-600" />
-                   </div>
-                   <h3 className="font-bold text-zinc-800 tracking-tight mb-2">Omnichannel Voice</h3>
-                   <p className="text-sm text-zinc-500 leading-relaxed">
-                     Integrated with Sarvam AI and Twilio WhatsApp to ensure rural access. Speak in any Indian language and get native audio responses.
-                   </p>
-                </div>
-
-                <div className="bg-white border border-zinc-200 rounded-2xl p-6 shadow-sm">
-                   <div className="w-10 h-10 rounded-xl bg-green-50 flex items-center justify-center mb-4">
-                     <ImageIcon className="w-5 h-5 text-green-600" />
-                   </div>
-                   <h3 className="font-bold text-zinc-800 tracking-tight mb-2">Document Intelligence</h3>
-                   <p className="text-sm text-zinc-500 leading-relaxed">
-                     Upload Aadhaar or Income Certificates. EasyOCR and Llama 3.2 Vision instantly extract exact demographic entities to prove eligibility.
-                   </p>
-                </div>
-              </div>
-
-              <div className="mt-8 border border-zinc-200 rounded-2xl overflow-hidden shadow-sm">
-                <div className="bg-zinc-50 px-6 py-4 border-b border-zinc-200 flex justify-between items-center">
-                  <h3 className="font-bold text-zinc-800 tracking-tight">System Status</h3>
-                  <div className="flex items-center gap-2 text-xs font-semibold text-green-600 bg-green-50 px-2 py-1 rounded-md">
-                    <span className="relative flex h-2 w-2">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
-                    </span>
-                    ALL SYSTEMS OPERATIONAL
+              <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+                <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+                  <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50">
+                    <FileText className="h-5 w-5 text-blue-600" />
                   </div>
+                  <h3 className="mb-2 font-bold tracking-tight text-zinc-800 dark:text-zinc-100">
+                    Graph RAG Engine
+                  </h3>
+                  <p className="text-sm leading-relaxed text-zinc-500 dark:text-zinc-400">
+                    LlamaIndex PropertyGraph analyzes complex interdependencies between state
+                    and central schemes, creating perfectly tailored eligibility bundles.
+                  </p>
                 </div>
-                <div className="p-6 bg-white grid grid-cols-2 md:grid-cols-4 gap-6 divide-x divide-zinc-100">
-                   <div className="px-4">
-                      <p className="text-xs font-semibold text-zinc-400 uppercase tracking-widest mb-1">Knowledge Nodes</p>
-                      <p className="text-2xl font-bold text-zinc-800 font-mono">1,402</p>
-                   </div>
-                   <div className="px-6">
-                      <p className="text-xs font-semibold text-zinc-400 uppercase tracking-widest mb-1">Synergy Edges</p>
-                      <p className="text-2xl font-bold text-zinc-800 font-mono">859</p>
-                   </div>
-                   <div className="px-6">
-                      <p className="text-xs font-semibold text-zinc-400 uppercase tracking-widest mb-1">LangGraph Agents</p>
-                      <p className="text-2xl font-bold text-zinc-800 font-mono">4 Active</p>
-                   </div>
-                   <div className="px-6">
-                      <p className="text-xs font-semibold text-zinc-400 uppercase tracking-widest mb-1">Inference Engine</p>
-                      <p className="text-2xl font-bold text-zinc-800">Groq</p>
-                   </div>
+
+                <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+                  <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-purple-50">
+                    <Headphones className="h-5 w-5 text-purple-600" />
+                  </div>
+                  <h3 className="mb-2 font-bold tracking-tight text-zinc-800 dark:text-zinc-100">
+                    Omnichannel Voice
+                  </h3>
+                  <p className="text-sm leading-relaxed text-zinc-500 dark:text-zinc-400">
+                    Integrated with Sarvam AI and Twilio WhatsApp to ensure rural access.
+                    Speak in any Indian language and get native audio responses.
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+                  <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-green-50">
+                    <ImageIcon className="h-5 w-5 text-green-600" />
+                  </div>
+                  <h3 className="mb-2 font-bold tracking-tight text-zinc-800 dark:text-zinc-100">
+                    Document Intelligence
+                  </h3>
+                  <p className="text-sm leading-relaxed text-zinc-500 dark:text-zinc-400">
+                    Upload Aadhaar or Income Certificates. EasyOCR and Llama 3.2 Vision
+                    instantly extract exact demographic entities to prove eligibility.
+                  </p>
                 </div>
               </div>
-
             </div>
           </div>
         ) : (
           <>
-            {/* Chat Scroll Container */}
-            <div className="w-full h-full overflow-y-auto pb-40 px-4 sm:px-8 pt-8 custom-scrollbar">
-              <div className="max-w-[760px] mx-auto space-y-8 pb-10">
-                {messages.map((m) => (
-                  <div key={m.id} className="w-full flex">
-                    {m.role === 'assistant' ? (
-                      <div className="flex flex-col w-full">
-                         <div className="flex items-center gap-2 text-zinc-500 mb-2 font-medium text-[13px]">
-                            <Bot className="w-4 h-4 text-zinc-600" />
-                            <span>Vozhi Assistant</span>
-                            {m.confidence && (
-                                <>
-                                  <span className="text-zinc-300 mx-1">|</span>
-                                  <span className="text-green-600 flex items-center gap-1.5 font-mono text-[11px] tracking-tight">
-                                    <ShieldCheck className="w-3.5 h-3.5" /> Faithfulness: {m.confidence.toFixed(1)}%
-                                  </span>
-                                </>
-                            )}
-                         </div>
-                         <div className="prose prose-sm max-w-none text-zinc-800 leading-relaxed font-sans whitespace-pre-wrap ml-6">
-                            {m.content}
-                         </div>
-                         {m.citations && m.citations.length > 0 && (
-                            <div className="mt-4 ml-6 space-y-1.5">
-                               {m.citations.slice(0, 3).map((cite, i) => (
-                                 <div key={i} className="text-xs bg-zinc-50 border border-zinc-200 px-3 py-1.5 rounded-md flex items-start gap-2 max-w-fit shadow-sm text-zinc-600">
-                                   <span className="text-zinc-400 font-mono">[{i+1}]</span> {cite}
-                                 </div>
-                               ))}
-                            </div>
-                         )}
+            <div className="custom-scrollbar h-full w-full overflow-y-auto px-4 pb-40 pt-8 sm:px-8">
+              <div className="mx-auto max-w-[760px] space-y-8 pb-10">
+                {messages.map((message) => (
+                  <div key={message.id} className="flex w-full">
+                    {message.role === "assistant" ? (
+                      <div className="flex w-full flex-col">
+                        <div className="mb-2 flex items-center gap-2 text-[13px] font-medium text-zinc-500 dark:text-zinc-400">
+                          <Bot className="h-4 w-4 text-zinc-600 dark:text-zinc-300" />
+                          <span>Vozhi Assistant</span>
+                          {message.confidence && (
+                            <>
+                              <span className="mx-1 text-zinc-300 dark:text-zinc-700">|</span>
+                              <span className="flex items-center gap-1.5 font-mono text-[11px] tracking-tight text-green-600">
+                                <ShieldCheck className="h-3.5 w-3.5" /> Faithfulness:{" "}
+                                {message.confidence.toFixed(1)}%
+                              </span>
+                            </>
+                          )}
+                        </div>
+                        <div className="prose prose-sm ml-6 max-w-none whitespace-pre-wrap font-sans leading-relaxed text-zinc-800 dark:text-zinc-100">
+                          {message.content}
+                        </div>
+                        {message.citations && message.citations.length > 0 && (
+                          <div className="ml-6 mt-4 space-y-1.5">
+                            {message.citations.slice(0, 3).map((cite, index) => (
+                              <div
+                                key={index}
+                                className="flex max-w-fit items-start gap-2 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-1.5 text-xs text-zinc-600 shadow-sm dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
+                              >
+                                <span className="font-mono text-zinc-400">[{index + 1}]</span>{" "}
+                                {cite}
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     ) : (
-                      <div className="flex justify-end w-full">
-                          <div className="bg-[#f0f0f0] text-zinc-800 px-4 py-2.5 rounded-2xl rounded-br-sm text-[14.5px] max-w-[80%] leading-relaxed shadow-sm">
-                            <p className="whitespace-pre-wrap">{m.content}</p>
-                          </div>
+                      <div className="flex w-full justify-end">
+                        <div className="max-w-[80%] rounded-2xl rounded-br-sm bg-[#f0f0f0] px-4 py-2.5 text-[14.5px] leading-relaxed text-zinc-800 shadow-sm dark:bg-zinc-800 dark:text-zinc-100">
+                          <p className="whitespace-pre-wrap">{message.content}</p>
+                        </div>
                       </div>
                     )}
                   </div>
                 ))}
-                
+
                 {loading && (
-                  <div className="flex gap-4 justify-start">
-                      <div className="flex flex-col w-full">
-                         <div className="flex items-center gap-2 text-zinc-500 mb-2 font-medium text-[13px]">
-                            <Bot className="w-4 h-4 animate-pulse text-zinc-600" />
-                            <span>Executing LangGraph nodes...</span>
-                         </div>
-                         <div className="ml-6 py-2">
-                            <Loader2 className="w-5 h-5 animate-spin text-zinc-300" />
-                         </div>
+                  <div className="flex justify-start gap-4">
+                    <div className="flex w-full flex-col">
+                      <div className="mb-2 flex items-center gap-2 text-[13px] font-medium text-zinc-500 dark:text-zinc-400">
+                        <Bot className="h-4 w-4 animate-pulse text-zinc-600 dark:text-zinc-300" />
+                        <span>Executing LangGraph nodes...</span>
                       </div>
+                      <div className="ml-6 py-2">
+                        <Loader2 className="h-5 w-5 animate-spin text-zinc-300 dark:text-zinc-600" />
+                      </div>
+                    </div>
                   </div>
                 )}
                 <div ref={messagesEndRef} />
               </div>
             </div>
 
-            {/* Floating Input Area exactly like Sarvam */}
-            <div className="absolute bottom-6 left-0 w-full flex justify-center z-20 pointer-events-none px-4">
-              <div className="w-full max-w-[760px] pointer-events-auto bg-white border border-zinc-200 rounded-2xl shadow-lg ring-1 ring-zinc-100 min-h-[56px] flex flex-col items-center">
-                
-                {/* Document Preview inside input */}
+            <div className="pointer-events-none absolute bottom-6 left-0 z-20 flex w-full justify-center px-4">
+              <div className="pointer-events-auto flex min-h-[56px] w-full max-w-[760px] flex-col items-center rounded-2xl border border-zinc-200 bg-white shadow-lg ring-1 ring-zinc-100 dark:border-zinc-800 dark:bg-zinc-900 dark:ring-zinc-800">
                 {uploadedDoc && (
-                  <div className="w-full px-4 pt-3 pb-1 flex items-center justify-between border-b border-zinc-100">
-                    <span className="text-xs font-semibold text-zinc-600 flex items-center gap-1.5 bg-zinc-100 px-2 py-1 rounded-md">
-                      <FileText className="w-3.5 h-3.5 text-blue-600" /> {uploadedDoc.name}
+                  <div className="flex w-full items-center justify-between border-b border-zinc-100 px-4 pb-1 pt-3 dark:border-zinc-800">
+                    <span className="flex items-center gap-1.5 rounded-md bg-zinc-100 px-2 py-1 text-xs font-semibold text-zinc-600 dark:bg-zinc-800 dark:text-zinc-200">
+                      <FileText className="h-3.5 w-3.5 text-blue-600" /> {uploadedDoc.name}
                     </span>
-                    <button onClick={() => setUploadedDoc(null)} className="text-[11px] font-semibold text-red-500 hover:text-red-700 uppercase tracking-widest">Remove</button>
+                    <button
+                      onClick={() => setUploadedDoc(null)}
+                      className="text-[11px] font-semibold uppercase tracking-widest text-red-500 hover:text-red-700"
+                    >
+                      Remove
+                    </button>
                   </div>
                 )}
 
-                <div className="flex items-end w-full p-2 gap-2 relative">
-                  
-                  <div className="flex shrink-0 pl-1 pb-1">
-                     <Button variant="ghost" size="icon" className="rounded-full w-8 h-8 text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 relative">
-                        <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e) => e.target.files && setUploadedDoc(e.target.files[0])} />
-                        <Paperclip className="w-4 h-4" />
-                     </Button>
+                <div className="relative flex w-full items-end gap-2 p-2">
+                  <div className="flex shrink-0 pb-1 pl-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="relative h-8 w-8 rounded-full text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+                    >
+                      <input
+                        type="file"
+                        className="absolute inset-0 cursor-pointer opacity-0"
+                        onChange={(e) => e.target.files && setUploadedDoc(e.target.files[0])}
+                      />
+                      <Paperclip className="h-4 w-4" />
+                    </Button>
                   </div>
 
-                  <Textarea 
+                  <Textarea
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={handleKeyDown}
                     placeholder="What's on your mind? Type a query or upload an Aadhaar card..."
-                    className="flex-1 w-full border-0 focus-visible:ring-0 resize-none min-h-[40px] max-h-[160px] py-2.5 px-0 text-[14px] text-zinc-800 placeholder:text-zinc-400 bg-transparent shadow-none focus:outline-none focus:ring-0"
+                    className="min-h-[40px] max-h-[160px] w-full flex-1 resize-none border-0 bg-transparent px-0 py-2.5 text-[14px] text-zinc-800 shadow-none placeholder:text-zinc-400 focus:outline-none focus:ring-0 focus-visible:ring-0 dark:text-zinc-100 dark:placeholder:text-zinc-500"
                     rows={1}
                   />
-                  
+
                   <div className="flex shrink-0 pb-1 pr-1">
-                    <Button 
-                      onClick={handleSend}
-                      disabled={loading || (!input.trim() && !uploadedDoc)}
-                      size="icon" 
-                      className="rounded-full w-8 h-8 bg-zinc-600 hover:bg-zinc-800 text-white transition-all disabled:opacity-30 disabled:hover:bg-zinc-600"
+                    <Button
+                      onClick={() => void handleSend()}
+                      disabled={loading || !session || (!input.trim() && !uploadedDoc)}
+                      size="icon"
+                      className="h-8 w-8 rounded-full bg-zinc-600 text-white transition-all hover:bg-zinc-800 disabled:opacity-30 disabled:hover:bg-zinc-600 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
                     >
-                      <ArrowUp className="w-4 h-4" />
+                      <ArrowUp className="h-4 w-4" />
                     </Button>
                   </div>
-
                 </div>
               </div>
             </div>
@@ -452,60 +573,36 @@ export default function VozhiApp() {
         )}
       </main>
 
-      {/* WhatsApp Modal */}
       <Dialog open={showWhatsApp} onOpenChange={setShowWhatsApp}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100">
           <DialogHeader>
             <DialogTitle>Try Vozhi on WhatsApp</DialogTitle>
             <DialogDescription>
-              Experience the power of Vozhi through Twilio WhatsApp. You can send voice notes or text anywhere in India.
+              Experience the power of Vozhi through Twilio WhatsApp. You can send voice
+              notes or text anywhere in India.
             </DialogDescription>
           </DialogHeader>
-          <div className="bg-zinc-100 p-4 rounded-xl space-y-3 mt-4">
-            <p className="text-sm text-zinc-700">1. Open your WhatsApp application.</p>
-            <p className="text-sm text-zinc-700">2. Send <span className="font-mono bg-zinc-200 px-1 py-0.5 rounded text-xs select-all">join familiar-metal</span> to <span className="font-mono bg-zinc-200 px-1 py-0.5 rounded text-xs">+1 415 523 8886</span></p>
-            <p className="text-sm text-zinc-700">3. Ask a question like <em>"I am a farmer from Bengal, what schemes am I eligible for?"</em></p>
+          <div className="mt-4 space-y-3 rounded-xl bg-zinc-100 p-4 dark:bg-zinc-800">
+            <p className="text-sm text-zinc-700 dark:text-zinc-200">
+              1. Open your WhatsApp application.
+            </p>
+            <p className="text-sm text-zinc-700 dark:text-zinc-200">
+              2. Send{" "}
+              <span className="select-all rounded bg-zinc-200 px-1 py-0.5 font-mono text-xs dark:bg-zinc-700">
+                join familiar-metal
+              </span>{" "}
+              to{" "}
+              <span className="rounded bg-zinc-200 px-1 py-0.5 font-mono text-xs dark:bg-zinc-700">
+                +1 415 523 8886
+              </span>
+            </p>
+            <p className="text-sm text-zinc-700 dark:text-zinc-200">
+              3. Ask a question like{" "}
+              <em>&quot;I am a farmer from Bengal, what schemes am I eligible for?&quot;</em>
+            </p>
           </div>
-          <div className="flex justify-end mt-4">
+          <div className="mt-4 flex justify-end">
             <Button onClick={() => setShowWhatsApp(false)}>Done</Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Settings / Architecture Modal */}
-      <Dialog open={showSettings} onOpenChange={setShowSettings}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Vozhi System Architecture</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="flex justify-between items-center text-sm border-b pb-2">
-              <span className="font-medium">Orchestrator Node</span>
-              <span className="text-zinc-500 font-mono text-xs">LangGraph v1.x</span>
-            </div>
-            <div className="flex justify-between items-center text-sm border-b pb-2">
-              <span className="font-medium">Inference Engine</span>
-              <span className="text-zinc-500 font-mono text-xs">llama-3.1-8b (Groq)</span>
-            </div>
-            <div className="flex justify-between items-center text-sm border-b pb-2">
-              <span className="font-medium">Graph Synergy Store</span>
-              <span className="text-zinc-500 font-mono text-xs">LlamaIndex PropertyGraph</span>
-            </div>
-            <div className="flex justify-between items-center text-sm border-b pb-2">
-              <span className="font-medium">Vector Store</span>
-              <span className="text-zinc-500 font-mono text-xs">Qdrant Local</span>
-            </div>
-            <div className="flex justify-between items-center text-sm border-b pb-2">
-              <span className="font-medium">Vision Extractor</span>
-              <span className="text-zinc-500 font-mono text-xs">llama-3.2-11b-vision / EasyOCR</span>
-            </div>
-            <div className="flex justify-between items-center text-sm">
-              <span className="font-medium">STT / TTS Provider</span>
-              <span className="text-zinc-500 font-mono text-xs">Sarvam AI</span>
-            </div>
-          </div>
-          <div className="flex justify-end mt-4">
-            <Button onClick={() => setShowSettings(false)}>Close</Button>
           </div>
         </DialogContent>
       </Dialog>

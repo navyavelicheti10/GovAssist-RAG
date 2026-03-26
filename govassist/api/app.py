@@ -12,7 +12,7 @@ from langchain_core.messages import HumanMessage
 from fastapi import Request, BackgroundTasks
 from pydantic import BaseModel, Field
 
-from govassist.api.db import init_db, get_all_sessions, get_session, save_session
+from govassist.api.db import delete_session, get_all_sessions, get_session, init_db, save_session
 
 class SaveSessionRequest(BaseModel):
     session_id: str
@@ -105,6 +105,13 @@ def api_get_session(session_id: str):
 def api_save_session(req: SaveSessionRequest):
     """Saves or updates the UI chat array into the SQLite database."""
     save_session(req.session_id, req.title, req.messages)
+    return {"status": "ok"}
+
+@app.delete("/api/sessions/{session_id}")
+def api_delete_session(session_id: str):
+    """Deletes a chat session from the SQLite database."""
+    if not delete_session(session_id):
+        raise HTTPException(status_code=404, detail="Session not found")
     return {"status": "ok"}
 
 
