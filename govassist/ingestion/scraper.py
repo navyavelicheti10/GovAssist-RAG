@@ -338,13 +338,13 @@ async def main():
 
                 await page.wait_for_timeout(1500)
 
-    os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
-
-    # Save JSON
-    with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
-        json.dump(all_data, f, indent=2, ensure_ascii=False)
-
-    print(f"\n🎉 DONE! Saved {len(all_data)} schemes")
+    try:
+        from govassist.api.db_utils import insert_scheme
+        for scheme in all_data:
+            insert_scheme(scheme)
+        print(f"\n🎉 DONE! Saved {len(all_data)} schemes to SQLite Database")
+    except Exception as e:
+        print(f"Failed to save to SQLite: {e}")
 
 
 if __name__ == "__main__":

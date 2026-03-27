@@ -1,29 +1,36 @@
-from langgraph.graph import StateGraph, START, END
-from govassist.agents.state import AgentState
-from govassist.agents.nodes import profile_agent, document_agent, retrieval_agent, synthesis_agent
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import END, START, StateGraph
+
+from govassist.agents.nodes import document_agent, llm_agent, rag_agent
+from govassist.agents.state import AgentState
+
+
+def route_from_start(state: AgentState) -> str:
+    if state.get("input_type") == "document":
+        return "DocumentAgent"
+    return "LLMAgent"
+
+
+def route_after_llm(state: AgentState) -> str:
+    if state.get("rag_completed"):
+        return END
+    return "RAGAgent"
+
 
 def build_graph():
-    """Builds and compiles the Vozhi Multi-Agent Graph."""
     builder = StateGraph(AgentState)
-    
-    # Add Nodes
-    builder.add_node("ProfileAgent", profile_agent)
-    builder.add_node("DocumentAgent", document_agent)
-    builder.add_node("RetrievalAgent", retrieval_agent)
-    builder.add_node("SynthesisAgent", synthesis_agent)
-    
-    # Define Edges
-    builder.add_edge(START, "ProfileAgent")
-    builder.add_edge("ProfileAgent", "DocumentAgent")
-    builder.add_edge("DocumentAgent", "RetrievalAgent")
-    builder.add_edge("RetrievalAgent", "SynthesisAgent")
-    builder.add_edge("SynthesisAgent", END)
-    
-    # Compile Graph
-    memory = MemorySaver()
-    app = builder.compile(checkpointer=memory)
-    
-    return app
 
-vozhi_orchestrator = build_graph()
+    builder.add_node("LLMAgent", llm_agent)
+    builder.add_node("RAGAgent", rag_agent)
+    builder.add_node("DocumentAgent", document_agent)
+
+    builder.add_conditional_edges(START, route_from_start)
+    builder.add_edge("DocumentAgent", "LLMAgent")
+    builder.add_conditional_edges("LLMAgent", route_after_llm)
+    builder.add_edge("RAGAgent", "LLMAgent")
+
+    return builder.compile(checkpointer=MemorySaver())
+
+
+govassist_graph = build_graph()
+vozhi_orchestrator = govassist_graph
