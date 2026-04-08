@@ -491,17 +491,34 @@ def text_to_speech(req: TTSRequest):
 @app.post("/scrape")
 def scrape(background_tasks: BackgroundTasks, ingest_after_scrape: bool = True):
     def run_scrape_pipeline() -> None:
-        logger.info("Starting scraper pipeline")
+        logger.info("[SCRAPE] Starting scraper pipeline (subprocess)")
+        logger.info("[SCRAPE] Script: %s", str(PROJECT_ROOT / 'scrape.py'))
+        logger.info("[SCRAPE] AUTO_INGEST=%s", 'true' if ingest_after_scrape else 'false')
         try:
-            subprocess.run(
+            proc = subprocess.Popen(
                 [sys.executable, str(PROJECT_ROOT / "scrape.py")],
                 cwd=str(PROJECT_ROOT),
                 env={**os.environ, "AUTO_INGEST": "true" if ingest_after_scrape else "false"},
-                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,  # merge stderr into stdout
+                text=True,
+                bufsize=1,
             )
-            logger.info("Scraper completed. SQLite and downstream index refresh follow scraper settings.")
+
+            # Stream subprocess output line-by-line into the parent logger
+            scraper_logger = logging.getLogger("govassist.ingestion.scraper")
+            for line in proc.stdout:
+                stripped = line.rstrip()
+                if stripped:
+                    scraper_logger.info("%s", stripped)
+
+            proc.wait()
+            if proc.returncode == 0:
+                logger.info("[SCRAPE] Scraper pipeline completed successfully (exit code 0)")
+            else:
+                logger.error("[SCRAPE] Scraper pipeline exited with code %d", proc.returncode)
         except Exception:
-            logger.exception("Scrape pipeline failed")
+            logger.exception("[SCRAPE] Scrape pipeline launcher failed")
 
     background_tasks.add_task(run_scrape_pipeline)
     return {
