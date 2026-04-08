@@ -1,5 +1,10 @@
+# Environment and local machine config
 .env
-.venv/
+.env.*
+!.env.example
+.python-version
+
+# Python
 __pycache__/
 *.pyc
 .codex/
